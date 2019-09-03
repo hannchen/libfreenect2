@@ -144,6 +144,7 @@ SET(SOURCES
   src/depth_packet_stream_parser.cpp
   src/depth_packet_processor.cpp
   src/cpu_depth_packet_processor.cpp
+  src/dump_and_cpu_depth_packet_processor.cpp
   src/resource.cpp
   src/command_transaction.cpp
   src/registration.cpp

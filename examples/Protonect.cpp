@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
   std::string serial = "";
 
   bool viewer_enabled = true;
-  bool enable_rgb = true;
+  bool enable_rgb = false;
   bool enable_depth = true;
   int deviceId = -1;
   size_t framemax = -1;
@@ -179,7 +179,7 @@ int main(int argc, char *argv[])
     {
       if(!pipeline)
 /// [pipeline]
-        pipeline = new libfreenect2::CpuPacketPipeline();
+        pipeline = new libfreenect2::DumpAndCpuPacketPipeline();
 /// [pipeline]
     }
     else if(arg == "gl")
@@ -308,6 +308,7 @@ int main(int argc, char *argv[])
     types |= libfreenect2::Frame::Color;
   if (enable_depth)
     types |= libfreenect2::Frame::Ir | libfreenect2::Frame::Depth;
+  types |= libfreenect2::Frame::Inactive;
   libfreenect2::SyncMultiFrameListener listener(types);
   libfreenect2::FrameMap frames;
 
@@ -356,6 +357,7 @@ int main(int argc, char *argv[])
     libfreenect2::Frame *rgb = frames[libfreenect2::Frame::Color];
     libfreenect2::Frame *ir = frames[libfreenect2::Frame::Ir];
     libfreenect2::Frame *depth = frames[libfreenect2::Frame::Depth];
+    libfreenect2::Frame *inactive = frames[libfreenect2::Frame::Inactive];
 /// [loop start]
 
     if (enable_rgb && enable_depth)
@@ -383,6 +385,7 @@ int main(int argc, char *argv[])
     {
       viewer.addFrame("ir", ir);
       viewer.addFrame("depth", depth);
+      viewer.addFrame("inactive", inactive);
     }
     if (enable_rgb && enable_depth)
     {

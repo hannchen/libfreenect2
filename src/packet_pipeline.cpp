@@ -135,6 +135,13 @@ CpuPacketPipeline::CpuPacketPipeline()
 
 CpuPacketPipeline::~CpuPacketPipeline() { }
 
+DumpAndCpuPacketPipeline::DumpAndCpuPacketPipeline()
+{
+  comp_->initialize(getDefaultRgbPacketProcessor(), new DumpAndCpuDepthPacketProcessor());
+}
+
+DumpAndCpuPacketPipeline::~DumpAndCpuPacketPipeline() { }
+
 #ifdef LIBFREENECT2_WITH_OPENGL_SUPPORT
 OpenGLPacketPipeline::OpenGLPacketPipeline(void *parent_opengl_context, bool debug) : parent_opengl_context_(parent_opengl_context), debug_(debug)
 {

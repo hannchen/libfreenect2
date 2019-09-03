@@ -90,6 +90,14 @@ public:
   virtual ~CpuPacketPipeline();
 };
 
+/** Pipeline with CPU depth processing. */
+class LIBFREENECT2_API DumpAndCpuPacketPipeline : public PacketPipeline
+{
+  public:
+    DumpAndCpuPacketPipeline();
+    virtual ~DumpAndCpuPacketPipeline();
+};
+
 #ifdef LIBFREENECT2_WITH_OPENGL_SUPPORT
 /** Pipeline with OpenGL depth processing. */
 class LIBFREENECT2_API OpenGLPacketPipeline : public PacketPipeline

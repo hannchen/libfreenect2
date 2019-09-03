@@ -49,7 +49,8 @@ class LIBFREENECT2_API Frame
   {
     Color = 1, ///< 1920x1080. BGRX or RGBX.
     Ir = 2,    ///< 512x424 float. Range is [0.0, 65535.0].
-    Depth = 4  ///< 512x424 float, unit: millimeter. Non-positive, NaN, and infinity are invalid or missing data.
+    Depth = 4,  ///< 512x424 float, unit: millimeter. Non-positive, NaN, and infinity are invalid or missing data.
+    Inactive = 8 ///< 512x424 float. Range is [0.0, 65535.0]. Contains only the tenth image with inactive ir led.
   };
 
   /** Pixel format. */

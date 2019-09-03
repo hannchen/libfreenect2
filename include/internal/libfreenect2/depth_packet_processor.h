@@ -166,6 +166,29 @@ private:
   CpuDepthPacketProcessorImpl *impl_;
 };
 
+
+class DumpAndCpuDepthPacketProcessorImpl;
+
+/** Depth packet processor using the CPU with dumping capability. */
+class DumpAndCpuDepthPacketProcessor : public DepthPacketProcessor
+{
+    public:
+        DumpAndCpuDepthPacketProcessor();
+        virtual ~DumpAndCpuDepthPacketProcessor();
+        virtual void setConfiguration(const libfreenect2::DepthPacketProcessor::Config &config);
+
+        virtual void loadP0TablesFromCommandResponse(unsigned char* buffer, size_t buffer_length);
+
+        virtual void loadXZTables(const float *xtable, const float *ztable);
+        virtual void loadLookupTable(const short *lut);
+
+        virtual const char *name() { return "CPU and Dump"; }
+        virtual void process(const DepthPacket &packet);
+    private:
+        DumpAndCpuDepthPacketProcessorImpl *impl_;
+};
+
+
 #ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
 class OpenCLDepthPacketProcessorImpl;
 
