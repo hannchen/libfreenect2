@@ -282,7 +282,7 @@ public:
   bool enable_bilateral_filter, enable_edge_filter;
   DepthPacketProcessor::Parameters params;
 
-  Frame *ir_frame, *depth_frame;
+  Frame *ir_frame, *depth_frame, *passive_ir_frame;
 
   bool flip_ptables;
 
@@ -290,6 +290,7 @@ public:
   {
     newIrFrame();
     newDepthFrame();
+    newPassiveIrFrame();
 
     enable_bilateral_filter = true;
     enable_edge_filter = true;
@@ -316,6 +317,12 @@ public:
   {
     depth_frame = new Frame(512, 424, 4);
     depth_frame->format = Frame::Float;
+  }
+
+  void newPassiveIrFrame()
+  {
+    passive_ir_frame = new Frame(512, 424, 4);
+    passive_ir_frame->format = Frame::Float;
   }
 
   int32_t decodePixelMeasurement(unsigned char* data, int sub, int x, int y)
@@ -456,7 +463,8 @@ public:
    * @param [out] m1_out Second layer output.
    * @param [out] m2_out Third layer output.
    */
-  void processPixelStage1(int x, int y, unsigned char* data, float *m0_out, float *m1_out, float *m2_out)
+  void
+  processPixelStage1(int x, int y, unsigned char *data, float *m0_out, float *m1_out, float *m2_out, float *passive_out)
   {
     int32_t m0_raw[3], m1_raw[3], m2_raw[3];
 
@@ -469,6 +477,7 @@ public:
     m2_raw[0] = decodePixelMeasurement(data, 6, x, y);
     m2_raw[1] = decodePixelMeasurement(data, 7, x, y);
     m2_raw[2] = decodePixelMeasurement(data, 8, x, y);
+    *passive_out = (float) decodePixelMeasurement(data, 9, x, y);
 
     processMeasurementTriple(trig_table0, params.ab_multiplier_per_frq[0], x, y, m0_raw, m0_out);
     processMeasurementTriple(trig_table1, params.ab_multiplier_per_frq[1], x, y, m1_raw, m1_out);
@@ -884,21 +893,24 @@ void CpuDepthPacketProcessor::process(const DepthPacket &packet)
 
   impl_->ir_frame->timestamp = packet.timestamp;
   impl_->depth_frame->timestamp = packet.timestamp;
+  impl_->passive_ir_frame->timestamp = packet.timestamp;
   impl_->ir_frame->sequence = packet.sequence;
   impl_->depth_frame->sequence = packet.sequence;
+  impl_->passive_ir_frame->sequence = packet.sequence;
 
   Mat<Vec<float, 9> >
       m(424, 512),
       m_filtered(424, 512)
   ;
   Mat<unsigned char> m_max_edge_test(424, 512);
+  Mat<float> passive(424, 512, impl_->passive_ir_frame->data);
 
   float *m_ptr = (m.ptr(0, 0)->val);
 
   for(int y = 0; y < 424; ++y)
     for(int x = 0; x < 512; ++x, m_ptr += 9)
     {
-      impl_->processPixelStage1(x, y, packet.buffer, m_ptr + 0, m_ptr + 3, m_ptr + 6);
+        impl_->processPixelStage1(x, y, packet.buffer, m_ptr + 0, m_ptr + 3, m_ptr + 6, &passive.at(423 - y, x));
     }
 
   // bilateral filtering
@@ -965,6 +977,11 @@ void CpuDepthPacketProcessor::process(const DepthPacket &packet)
     if(listener_->onNewFrame(Frame::Ir, impl_->ir_frame))
     {
       impl_->newIrFrame();
+    }
+
+    if(listener_->onNewFrame(Frame::PassiveIr, impl_->passive_ir_frame))
+    {
+        impl_->newPassiveIrFrame();
     }
 
     if(listener_->onNewFrame(Frame::Depth, impl_->depth_frame))

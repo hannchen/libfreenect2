@@ -168,10 +168,11 @@ public:
   libfreenect2::DepthPacketProcessor::Config config;
   DepthPacketProcessor::Parameters params;
 
-  Frame *ir_frame, *depth_frame;
+  Frame *ir_frame, *depth_frame, *passive_ir_frame;
   Allocator *input_buffer_allocator;
   Allocator *ir_buffer_allocator;
   Allocator *depth_buffer_allocator;
+  Allocator *passive_ir_buffer_allocator;
 
   cl::Context context;
   cl::Device device;
@@ -202,6 +203,7 @@ public:
   size_t buf_b_size;
   size_t buf_n_size;
   size_t buf_ir_size;
+  size_t buf_passive_ir_size;
   size_t buf_a_filtered_size;
   size_t buf_b_filtered_size;
   size_t buf_edge_test_size;
@@ -213,6 +215,7 @@ public:
   cl::Buffer buf_b;
   cl::Buffer buf_n;
   cl::Buffer buf_ir;
+  cl::Buffer buf_passive_ir;
   cl::Buffer buf_a_filtered;
   cl::Buffer buf_b_filtered;
   cl::Buffer buf_edge_test;
@@ -247,9 +250,11 @@ public:
     input_buffer_allocator = new PoolAllocator(new OpenCLAllocator(context, queue, true));
     ir_buffer_allocator = new PoolAllocator(new OpenCLAllocator(context, queue, false));
     depth_buffer_allocator = new PoolAllocator(new OpenCLAllocator(context, queue, false));
+    passive_ir_buffer_allocator = new PoolAllocator(new OpenCLAllocator(context, queue, false));
 
     newIrFrame();
     newDepthFrame();
+    newPassiveIrFrame();
 
     const int CL_ICDL_VERSION = 2;
     typedef cl_int (*icdloader_func)(int, size_t, void*, size_t*);
@@ -284,6 +289,7 @@ public:
     delete input_buffer_allocator;
     delete ir_buffer_allocator;
     delete depth_buffer_allocator;
+    delete passive_ir_buffer_allocator;
   }
 
   void generateOptions(std::string &options) const
@@ -481,6 +487,7 @@ public:
     buf_b_size = IMAGE_SIZE * sizeof(cl_float3);
     buf_n_size = IMAGE_SIZE * sizeof(cl_float3);
     buf_ir_size = IMAGE_SIZE * sizeof(cl_float);
+    buf_passive_ir_size = IMAGE_SIZE * sizeof(cl_float);
     buf_a_filtered_size = IMAGE_SIZE * sizeof(cl_float3);
     buf_b_filtered_size = IMAGE_SIZE * sizeof(cl_float3);
     buf_edge_test_size = IMAGE_SIZE * sizeof(cl_uchar);
@@ -492,6 +499,7 @@ public:
     CHECK_CL_PARAM(buf_b = cl::Buffer(context, CL_MEM_READ_WRITE, buf_b_size, NULL, &err));
     CHECK_CL_PARAM(buf_n = cl::Buffer(context, CL_MEM_READ_WRITE, buf_n_size, NULL, &err));
     CHECK_CL_PARAM(buf_ir = cl::Buffer(context, CL_MEM_WRITE_ONLY, buf_ir_size, NULL, &err));
+    CHECK_CL_PARAM(buf_passive_ir = cl::Buffer(context, CL_MEM_WRITE_ONLY, buf_passive_ir_size, NULL, &err));
     CHECK_CL_PARAM(buf_a_filtered = cl::Buffer(context, CL_MEM_READ_WRITE, buf_a_filtered_size, NULL, &err));
     CHECK_CL_PARAM(buf_b_filtered = cl::Buffer(context, CL_MEM_READ_WRITE, buf_b_filtered_size, NULL, &err));
     CHECK_CL_PARAM(buf_edge_test = cl::Buffer(context, CL_MEM_READ_WRITE, buf_edge_test_size, NULL, &err));
@@ -522,6 +530,7 @@ public:
     CHECK_CL_RETURN(kernel_processPixelStage1.setArg(5, buf_b));
     CHECK_CL_RETURN(kernel_processPixelStage1.setArg(6, buf_n));
     CHECK_CL_RETURN(kernel_processPixelStage1.setArg(7, buf_ir));
+    CHECK_CL_RETURN(kernel_processPixelStage1.setArg(8, buf_passive_ir));
 
     CHECK_CL_PARAM(kernel_filterPixelStage1 = cl::Kernel(program, "filterPixelStage1", &err));
     CHECK_CL_RETURN(kernel_filterPixelStage1.setArg(0, buf_a));
@@ -557,6 +566,7 @@ public:
     CHECK_CL_RETURN(queue.enqueueWriteBuffer(buf_packet, CL_FALSE, 0, buf_packet_size, packet.buffer, NULL, &eventWrite[0]));
     CHECK_CL_RETURN(queue.enqueueNDRangeKernel(kernel_processPixelStage1, cl::NullRange, cl::NDRange(IMAGE_SIZE), cl::NullRange, &eventWrite, &eventPPS1[0]));
     CHECK_CL_RETURN(queue.enqueueReadBuffer(buf_ir, CL_FALSE, 0, buf_ir_size, ir_frame->data, &eventPPS1, &eventReadIr));
+    CHECK_CL_RETURN(queue.enqueueReadBuffer(buf_passive_ir, CL_FALSE, 0, buf_passive_ir_size, passive_ir_frame->data, &eventPPS1, &eventReadIr));
 
     if(config.EnableBilateralFilter)
     {
@@ -652,6 +662,12 @@ public:
   {
     depth_frame = new OpenCLFrame(static_cast<OpenCLBuffer *>(depth_buffer_allocator->allocate(IMAGE_SIZE * sizeof(cl_float))));
     depth_frame->format = Frame::Float;
+  }
+
+  void newPassiveIrFrame()
+  {
+    passive_ir_frame = new OpenCLFrame(static_cast<OpenCLBuffer *>(passive_ir_buffer_allocator->allocate(IMAGE_SIZE * sizeof(cl_float))));
+    passive_ir_frame->format = Frame::Float;
   }
 
   bool fill_trig_table(const libfreenect2::protocol::P0TablesResponse *p0table)
@@ -794,8 +810,10 @@ void OpenCLDepthPacketProcessor::process(const DepthPacket &packet)
 
   impl_->ir_frame->timestamp = packet.timestamp;
   impl_->depth_frame->timestamp = packet.timestamp;
+  impl_->passive_ir_frame->timestamp = packet.timestamp;
   impl_->ir_frame->sequence = packet.sequence;
   impl_->depth_frame->sequence = packet.sequence;
+  impl_->passive_ir_frame->sequence = packet.sequence;
 
   impl_->runtimeOk = impl_->run(packet);
 
@@ -805,12 +823,15 @@ void OpenCLDepthPacketProcessor::process(const DepthPacket &packet)
   {
     impl_->ir_frame->status = 1;
     impl_->depth_frame->status = 1;
+    impl_->passive_ir_frame->status = 1;
   }
 
   if(listener_->onNewFrame(Frame::Ir, impl_->ir_frame))
     impl_->newIrFrame();
   if(listener_->onNewFrame(Frame::Depth, impl_->depth_frame))
     impl_->newDepthFrame();
+  if(listener_->onNewFrame(Frame::PassiveIr, impl_->passive_ir_frame))
+    impl_->newPassiveIrFrame();
 }
 
 Allocator *OpenCLDepthPacketProcessor::getAllocator()

@@ -47,7 +47,7 @@ float decodePixelMeasurement(global const ushort *data, global const short *lut1
 }
 
 void kernel processPixelStage1(global const short *lut11to16, global const float *z_table, global const float3 *p0_table, global const ushort *data,
-                               global float3 *a_out, global float3 *b_out, global float3 *n_out, global float *ir_out)
+                               global float3 *a_out, global float3 *b_out, global float3 *n_out, global float *ir_out, global float *passive_out)
 {
   const uint i = get_global_id(0);
 
@@ -97,6 +97,7 @@ void kernel processPixelStage1(global const short *lut11to16, global const float
   b_out[i] = select(b, (float3)(0.0f), saturated);
   n_out[i] = n;
   ir_out[i] = min(dot(select(n, (float3)(65535.0f), saturated), (float3)(0.333333333f  * AB_MULTIPLIER * AB_OUTPUT_MULTIPLIER)), 65535.0f);
+  passive_out[i] = decodePixelMeasurement(data, lut11to16, 9, x, y_in);
 }
 
 /*******************************************************************************

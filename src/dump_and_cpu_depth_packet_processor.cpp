@@ -980,7 +980,7 @@ void DumpAndCpuDepthPacketProcessor::process(const DepthPacket &packet)
       impl_->newIrFrame();
     }
 
-    if(listener_->onNewFrame(Frame::Inactive, impl_->inactive_frame))
+    if(listener_->onNewFrame(Frame::PassiveIr, impl_->inactive_frame))
     {
         impl_->newInactiveFrame();
     }

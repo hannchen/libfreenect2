@@ -179,7 +179,7 @@ int main(int argc, char *argv[])
     {
       if(!pipeline)
 /// [pipeline]
-        pipeline = new libfreenect2::DumpAndCpuPacketPipeline();
+        pipeline = new libfreenect2::CpuPacketPipeline();
 /// [pipeline]
     }
     else if(arg == "gl")
@@ -307,8 +307,7 @@ int main(int argc, char *argv[])
   if (enable_rgb)
     types |= libfreenect2::Frame::Color;
   if (enable_depth)
-    types |= libfreenect2::Frame::Ir | libfreenect2::Frame::Depth;
-  types |= libfreenect2::Frame::Inactive;
+    types |= libfreenect2::Frame::Ir | libfreenect2::Frame::Depth | libfreenect2::Frame::PassiveIr;
   libfreenect2::SyncMultiFrameListener listener(types);
   libfreenect2::FrameMap frames;
 
@@ -357,7 +356,7 @@ int main(int argc, char *argv[])
     libfreenect2::Frame *rgb = frames[libfreenect2::Frame::Color];
     libfreenect2::Frame *ir = frames[libfreenect2::Frame::Ir];
     libfreenect2::Frame *depth = frames[libfreenect2::Frame::Depth];
-    libfreenect2::Frame *inactive = frames[libfreenect2::Frame::Inactive];
+    libfreenect2::Frame *passive_ir = frames[libfreenect2::Frame::PassiveIr];
 /// [loop start]
 
     if (enable_rgb && enable_depth)
@@ -385,7 +384,7 @@ int main(int argc, char *argv[])
     {
       viewer.addFrame("ir", ir);
       viewer.addFrame("depth", depth);
-      viewer.addFrame("inactive", inactive);
+      viewer.addFrame("passive_ir", passive_ir);
     }
     if (enable_rgb && enable_depth)
     {
