@@ -176,7 +176,7 @@ float2 processMeasurementTriple(const float ab_multiplier_per_frq, const float p
 
 static __global__
 void processPixelStage1(const short* __restrict__ lut11to16, const float* __restrict__ z_table, const float4* __restrict__ p0_table, const ushort* __restrict__ data,
-                               float4 *a_out, float4 *b_out, float4 *n_out, float *ir_out)
+                               float4 *a_out, float4 *b_out, float4 *n_out, float *ir_out, float *passive_out)
 {
   const uint i = get_global_id(0);
 
@@ -220,6 +220,7 @@ void processPixelStage1(const short* __restrict__ lut11to16, const float* __rest
   b_out[i] = make_float4(b);
   n_out[i] = make_float4(n);
   ir_out[i] = min(dot(select(n, make_float3(65535.0f), saturated), make_float3(0.333333333f  * AB_MULTIPLIER * AB_OUTPUT_MULTIPLIER)), 65535.0f);
+  passive_out[i] = decodePixelMeasurement(data, lut11to16, 9, x, y_in);
 }
 
 /*******************************************************************************
@@ -588,6 +589,7 @@ public:
   float4 *d_b;
   float4 *d_n;
   float *d_ir;
+  float *d_passive_ir;
   float4 *d_a_filtered;
   float4 *d_b_filtered;
   unsigned char *d_edge_test;
@@ -601,10 +603,11 @@ public:
   DepthPacketProcessor::Config config;
   DepthPacketProcessor::Parameters params;
 
-  Frame *ir_frame, *depth_frame;
+  Frame *ir_frame, *depth_frame, *passive_ir_frame;
 
   Allocator *input_allocator;
   Allocator *ir_allocator;
+  Allocator *passive_ir_allocator;
   Allocator *depth_allocator;
 
   bool good;
@@ -616,8 +619,10 @@ public:
     params(),
     ir_frame(NULL),
     depth_frame(NULL),
+    passive_ir_frame(NULL),
     input_allocator(NULL),
     ir_allocator(NULL),
+    passive_ir_allocator(NULL),
     depth_allocator(NULL)
   {
     good = initDevice(deviceId);
@@ -626,9 +631,11 @@ public:
 
     input_allocator = new PoolAllocator(new CudaAllocator(true));
     ir_allocator = new PoolAllocator(new CudaAllocator(false));
+    passive_ir_allocator = new PoolAllocator(new CudaAllocator(false));
     depth_allocator = new PoolAllocator(new CudaAllocator(false));
 
     newIrFrame();
+    newPassiveIrFrame();
     newDepthFrame();
   }
 
@@ -636,8 +643,10 @@ public:
   {
     delete ir_frame;
     delete depth_frame;
+    delete passive_ir_frame;
     delete input_allocator;
     delete ir_allocator;
+    delete passive_ir_allocator;
     delete depth_allocator;
     if (good)
       freeDeviceMemory();
@@ -721,6 +730,7 @@ public:
     size_t d_b_size = IMAGE_SIZE * sizeof(float4);
     size_t d_n_size = IMAGE_SIZE * sizeof(float4);
     size_t d_ir_size = IMAGE_SIZE * sizeof(float);
+    size_t d_passive_ir_size = IMAGE_SIZE * sizeof(float);
     size_t d_a_filtered_size = IMAGE_SIZE * sizeof(float4);
     size_t d_b_filtered_size = IMAGE_SIZE * sizeof(float4);
     size_t d_edge_test_size = IMAGE_SIZE * sizeof(char);
@@ -732,6 +742,7 @@ public:
     CHECK_CUDA(cudaMalloc(&d_b, d_b_size));
     CHECK_CUDA(cudaMalloc(&d_n, d_n_size));
     CHECK_CUDA(cudaMalloc(&d_ir, d_ir_size));
+    CHECK_CUDA(cudaMalloc(&d_passive_ir, d_passive_ir_size));
     CHECK_CUDA(cudaMalloc(&d_a_filtered, d_a_filtered_size));
     CHECK_CUDA(cudaMalloc(&d_b_filtered, d_b_filtered_size));
     CHECK_CUDA(cudaMalloc(&d_edge_test, d_edge_test_size));
@@ -758,6 +769,7 @@ public:
     CALL_CUDA(cudaFree(d_b));
     CALL_CUDA(cudaFree(d_n));
     CALL_CUDA(cudaFree(d_ir));
+    CALL_CUDA(cudaFree(d_passive_ir));
     CALL_CUDA(cudaFree(d_a_filtered));
     CALL_CUDA(cudaFree(d_b_filtered));
     CALL_CUDA(cudaFree(d_edge_test));
@@ -835,13 +847,15 @@ public:
   bool run(const DepthPacket &packet)
   {
     size_t ir_frame_size = ir_frame->width * ir_frame->height * ir_frame->bytes_per_pixel;
+    size_t passive_ir_frame_size = passive_ir_frame->width * passive_ir_frame->height * passive_ir_frame->bytes_per_pixel;
     size_t depth_frame_size = depth_frame->width * depth_frame->height * depth_frame->bytes_per_pixel;
 
     cudaMemcpyAsync(d_packet, packet.buffer, packet.buffer_length, cudaMemcpyHostToDevice);
 
-    processPixelStage1<<<grid_size, block_size>>>(d_lut, d_ztable, d_p0table, d_packet, d_a, d_b, d_n, d_ir);
+    processPixelStage1<<<grid_size, block_size>>>(d_lut, d_ztable, d_p0table, d_packet, d_a, d_b, d_n, d_ir, d_passive_ir);
 
     cudaMemcpyAsync(ir_frame->data, d_ir, ir_frame_size, cudaMemcpyDeviceToHost);
+    cudaMemcpyAsync(passive_ir_frame->data, d_passive_ir, passive_ir_frame_size, cudaMemcpyDeviceToHost);
 
     if (config.EnableBilateralFilter) {
       filterPixelStage1<<<grid_size, block_size>>>(d_a, d_b, d_n, d_a_filtered, d_b_filtered, d_edge_test);
@@ -874,6 +888,12 @@ public:
   {
     depth_frame = new CudaFrame(depth_allocator->allocate(IMAGE_SIZE*sizeof(float)));
     depth_frame->format = Frame::Float;
+  }
+
+  void newPassiveIrFrame()
+  {
+    passive_ir_frame = new CudaFrame(passive_ir_allocator->allocate(IMAGE_SIZE*sizeof(float)));
+    passive_ir_frame->format = Frame::Float;
   }
 
   void fill_trig_table(const protocol::P0TablesResponse *p0table)
@@ -940,8 +960,10 @@ void CudaDepthPacketProcessor::process(const DepthPacket &packet)
   impl_->startTiming();
 
   impl_->ir_frame->timestamp = packet.timestamp;
+  impl_->passive_ir_frame->timestamp = packet.timestamp;
   impl_->depth_frame->timestamp = packet.timestamp;
   impl_->ir_frame->sequence = packet.sequence;
+  impl_->passive_ir_frame->sequence = packet.sequence;
   impl_->depth_frame->sequence = packet.sequence;
 
   impl_->good = impl_->run(packet);
@@ -950,11 +972,14 @@ void CudaDepthPacketProcessor::process(const DepthPacket &packet)
 
   if (!impl_->good) {
     impl_->ir_frame->status = 1;
+    impl_->passive_ir_frame->status = 1;
     impl_->depth_frame->status = 1;
   }
 
   if (listener_->onNewFrame(Frame::Ir, impl_->ir_frame))
     impl_->newIrFrame();
+  if (listener_->onNewFrame(Frame::PassiveIr, impl_->passive_ir_frame))
+    impl_->newPassiveIrFrame();
   if (listener_->onNewFrame(Frame::Depth, impl_->depth_frame))
     impl_->newDepthFrame();
 }
